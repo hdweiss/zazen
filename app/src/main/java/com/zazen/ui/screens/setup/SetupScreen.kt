@@ -13,7 +13,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,21 +30,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Brightness7
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DoNotDisturbOn
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -66,7 +61,6 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -109,6 +103,7 @@ private const val OPEN_ENDED_BELL_MAX_MINUTES = 240
 fun SetupScreen(
     onStartTimer: () -> Unit,
     onNavigateToStats: () -> Unit,
+    onNavigateToSettings: () -> Unit,
     viewModel: SetupViewModel = hiltViewModel(),
 ) {
     val durationSeconds by viewModel.durationSeconds.collectAsState()
@@ -116,14 +111,11 @@ fun SetupScreen(
     val repeatEverySeconds by viewModel.repeatEverySeconds.collectAsState()
     val repeatSound by viewModel.repeatSound.collectAsState()
     val vibrateOnly by viewModel.vibrateOnly.collectAsState()
-    val bellVolume by viewModel.bellVolume.collectAsState()
     val endSound by viewModel.endSound.collectAsState()
     val dndEnabled by viewModel.dndEnabled.collectAsState()
-    val screenAlwaysOn by viewModel.screenAlwaysOn.collectAsState()
     val bells by viewModel.bells.collectAsState()
     val presets by viewModel.presets.collectAsState()
     val selectedPreset by viewModel.selectedPreset.collectAsState()
-    val themeMode by viewModel.themeMode.collectAsState()
 
     var showAddBellDialog by remember { mutableStateOf(false) }
     var editingBellIndex by remember { mutableIntStateOf(-1) }
@@ -132,7 +124,6 @@ fun SetupScreen(
     var showDurationEditor by remember { mutableStateOf(false) }
     var showRepeatEditor by remember { mutableStateOf(false) }
     var showVolumeWarning by remember { mutableStateOf(false) }
-    var showThemePicker by remember { mutableStateOf(false) }
     var presetToDelete by remember { mutableStateOf<Preset?>(null) }
 
     // Notification permission (Android 13+)
@@ -175,11 +166,11 @@ fun SetupScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
-                    IconButton(onClick = { showThemePicker = true }) {
-                        Icon(Icons.Default.Palette, stringResource(R.string.setup_cd_theme))
-                    }
                     IconButton(onClick = onNavigateToStats) {
                         Icon(Icons.Default.History, stringResource(R.string.setup_cd_stats))
+                    }
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(Icons.Default.Settings, stringResource(R.string.setup_cd_settings))
                     }
                 },
             )
@@ -189,12 +180,19 @@ fun SetupScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 24.dp)
-                .verticalScroll(rememberScrollState()),
+                .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // --- Presets ---
-            if (presets.isNotEmpty()) {
+            // Only scrolls when it has to (many interval bells, large font
+            // scales); Start stays pinned below it either way.
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // --- Presets (plus the chip that saves the current setup as one) ---
                 Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier
@@ -241,300 +239,168 @@ fun SetupScreen(
                             },
                         )
                     }
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // --- Timed / Open mode ---
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = !openEnded,
-                    onClick = { viewModel.setOpenEnded(false) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                ) { Text(stringResource(R.string.mode_timed)) }
-                SegmentedButton(
-                    selected = openEnded,
-                    onClick = { viewModel.setOpenEnded(true) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                ) { Text(stringResource(R.string.mode_open)) }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // --- Duration picker ---
-            Text(
-                stringResource(R.string.duration_label),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Spacer(Modifier.height(8.dp))
-            if (openEnded) {
-                val unlimitedLabel = stringResource(R.string.duration_cd_unlimited)
-                Text(
-                    text = stringResource(R.string.duration_unlimited_symbol),
-                    style = MaterialTheme.typography.displayMedium,
-                    // "∞" is read inconsistently (or skipped) by TTS engines.
-                    modifier = Modifier.clearAndSetSemantics {
-                        contentDescription = unlimitedLabel
+                AssistChip(
+                    onClick = {
+                        if (selectedPreset == null) showNewPresetDialog = true
+                        else showSavePresetDialog = true
                     },
+                    label = { Text(if (selectedPreset == null) stringResource(R.string.preset_save_chip) else "Save preset") },
+                    leadingIcon = { Icon(Icons.Default.Save, null, modifier = Modifier.size(18.dp)) },
                 )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    stringResource(R.string.duration_open_ended_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // --- Timed / Open mode ---
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    SegmentedButton(
+                        selected = !openEnded,
+                        onClick = { viewModel.setOpenEnded(false) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                    ) { Text(stringResource(R.string.mode_timed)) }
+                    SegmentedButton(
+                        selected = openEnded,
+                        onClick = { viewModel.setOpenEnded(true) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                    ) { Text(stringResource(R.string.mode_open)) }
+                }
+
+                // --- Duration ---
+                Spacer(Modifier.height(40.dp))
+                if (openEnded) {
+                    val unlimitedLabel = stringResource(R.string.duration_cd_unlimited)
+                    Text(
+                        text = stringResource(R.string.duration_unlimited_symbol),
+                        style = MaterialTheme.typography.displayMedium,
+                        // "∞" is read inconsistently (or skipped) by TTS engines.
+                        modifier = Modifier.clearAndSetSemantics {
+                            contentDescription = unlimitedLabel
+                        },
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        stringResource(R.string.duration_open_ended_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                } else {
+                    val spoken = spokenDuration(durationSeconds)
+                    val editLabel = stringResource(R.string.duration_action_edit)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        IconButton(onClick = { viewModel.decrementDuration() }) {
+                            Icon(
+                                Icons.Default.Remove,
+                                stringResource(R.string.duration_cd_decrease),
+                            )
+                        }
+                        Text(
+                            text = formatDuration(durationSeconds),
+                            style = MaterialTheme.typography.displayLarge,
+                            modifier = Modifier
+                                .clickable(
+                                    onClickLabel = editLabel,
+                                    role = Role.Button,
+                                ) { showDurationEditor = true }
+                                .padding(horizontal = 16.dp)
+                                .semantics { contentDescription = spoken },
+                        )
+                        IconButton(onClick = { viewModel.incrementDuration() }) {
+                            Icon(
+                                Icons.Default.Add,
+                                stringResource(R.string.duration_cd_increase),
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(40.dp))
+
+                // --- End bell sound ---
+                EndBellSelector(
+                    selected = endSound,
+                    onSelect = { viewModel.setEndSound(it) },
+                    onPreview = { viewModel.previewSound(it) },
                 )
-            } else {
-                val spoken = spokenDuration(durationSeconds)
-                val editLabel = stringResource(R.string.duration_action_edit)
+
+                Spacer(Modifier.height(8.dp))
+
+                // --- Repeating bell ---
+                // The whole row is the target so the trailing label isn't a separate,
+                // unlabelled ("Set") focus stop.
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
+                        .clickable(
+                            onClickLabel = stringResource(R.string.repeat_bell_cd_configure),
+                            role = Role.Button,
+                        ) { showRepeatEditor = true }
+                        .heightIn(min = 48.dp)
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
                 ) {
-                    IconButton(onClick = { viewModel.decrementDuration() }) {
-                        Icon(
-                            Icons.Default.Remove,
-                            stringResource(R.string.duration_cd_decrease),
-                        )
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.Repeat, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(stringResource(R.string.repeat_bell_title))
+                            Text(
+                                if (repeatEverySeconds > 0) {
+                                    stringResource(
+                                        R.string.repeat_bell_summary,
+                                        formatDuration(repeatEverySeconds),
+                                        stringResource(repeatSound.displayNameRes),
+                                    )
+                                } else {
+                                    stringResource(R.string.repeat_bell_off)
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                     Text(
-                        text = formatDuration(durationSeconds),
-                        style = MaterialTheme.typography.displayMedium,
+                        if (repeatEverySeconds > 0) {
+                            stringResource(R.string.action_change)
+                        } else {
+                            stringResource(R.string.action_set)
+                        },
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
-                            .clickable(
-                                onClickLabel = editLabel,
-                                role = Role.Button,
-                            ) { showDurationEditor = true }
-                            .padding(horizontal = 16.dp)
-                            .semantics { contentDescription = spoken },
+                            .clearAndSetSemantics { }
+                            .padding(horizontal = 12.dp),
                     )
-                    IconButton(onClick = { viewModel.incrementDuration() }) {
-                        Icon(
-                            Icons.Default.Add,
-                            stringResource(R.string.duration_cd_increase),
-                        )
-                    }
                 }
-            }
 
-            Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(8.dp))
 
-            // --- End bell sound ---
-            EndBellSelector(
-                selected = endSound,
-                onSelect = { viewModel.setEndSound(it) },
-                onPreview = { viewModel.previewSound(it) },
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            // --- Bell volume ---
-            // Stacked rather than a fixed-width label + slider row so it survives
-            // large font scales.
-            val volumePercent = (bellVolume * 100).toInt()
-            val volumeLabel = stringResource(R.string.bell_volume_label)
-            val volumeState = stringResource(R.string.bell_volume_percent, volumePercent)
-            Column(modifier = Modifier.fillMaxWidth()) {
+                // --- Interval bells ---
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(volumeLabel)
                     Text(
-                        volumeState,
-                        style = MaterialTheme.typography.bodySmall,
-                        // The slider already announces the percentage.
-                        modifier = Modifier.clearAndSetSemantics { },
+                        stringResource(R.string.interval_bells_label),
+                        style = MaterialTheme.typography.titleMedium,
                     )
-                }
-                Slider(
-                    value = bellVolume,
-                    onValueChange = { viewModel.setBellVolume(it) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics {
-                            contentDescription = volumeLabel
-                            stateDescription = volumeState
-                        },
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // --- Vibrate toggle ---
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .toggleable(
-                        value = vibrateOnly,
-                        role = Role.Switch,
-                        onValueChange = { viewModel.toggleVibrateOnly() },
-                    )
-                    .heightIn(min = 48.dp)
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        if (vibrateOnly) Icons.Default.Vibration else Icons.AutoMirrored.Filled.VolumeUp,
-                        contentDescription = null,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text(stringResource(R.string.toggle_vibrate_title))
-                        Text(
-                            stringResource(R.string.toggle_vibrate_subtitle),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    TextButton(onClick = { showAddBellDialog = true }) {
+                        Icon(Icons.Default.Add, null, modifier = Modifier.padding(end = 4.dp))
+                        Text(stringResource(R.string.action_add))
                     }
                 }
-                Switch(checked = vibrateOnly, onCheckedChange = null)
-            }
 
-            Spacer(Modifier.height(8.dp))
-
-            // --- Do Not Disturb toggle ---
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .toggleable(
-                        value = dndEnabled,
-                        role = Role.Switch,
-                        onValueChange = { viewModel.toggleDnd() },
-                    )
-                    .heightIn(min = 48.dp)
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Default.DoNotDisturbOn, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.toggle_dnd_title))
-                }
-                Switch(checked = dndEnabled, onCheckedChange = null)
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // --- Screen Always On toggle ---
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .toggleable(
-                        value = screenAlwaysOn,
-                        role = Role.Switch,
-                        onValueChange = { viewModel.toggleScreenAlwaysOn() },
-                    )
-                    .heightIn(min = 48.dp)
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Default.Brightness7, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.toggle_screen_on_title))
-                }
-                Switch(checked = screenAlwaysOn, onCheckedChange = null)
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // --- Repeating bell ---
-            // The whole row is the target so the trailing label isn't a separate,
-            // unlabelled ("Set") focus stop.
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(
-                        onClickLabel = stringResource(R.string.repeat_bell_cd_configure),
-                        role = Role.Button,
-                    ) { showRepeatEditor = true }
-                    .heightIn(min = 48.dp)
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Default.Repeat, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text(stringResource(R.string.repeat_bell_title))
-                        Text(
-                            if (repeatEverySeconds > 0) {
-                                stringResource(
-                                    R.string.repeat_bell_summary,
-                                    formatDuration(repeatEverySeconds),
-                                    stringResource(repeatSound.displayNameRes),
-                                )
-                            } else {
-                                stringResource(R.string.repeat_bell_off)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Text(
-                    if (repeatEverySeconds > 0) {
-                        stringResource(R.string.action_change)
-                    } else {
-                        stringResource(R.string.action_set)
-                    },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .clearAndSetSemantics { }
-                        .padding(horizontal = 12.dp),
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // --- Interval bells ---
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    stringResource(R.string.interval_bells_label),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                TextButton(onClick = { showAddBellDialog = true }) {
-                    Icon(Icons.Default.Add, null, modifier = Modifier.padding(end = 4.dp))
-                    Text(stringResource(R.string.action_add))
-                }
-            }
-
-            if (bells.isEmpty()) {
-                Text(
-                    stringResource(R.string.interval_bells_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 8.dp),
-                )
-            } else {
                 bells.forEachIndexed { index, bell ->
                     BellItem(
                         bell = bell,
@@ -547,19 +413,6 @@ fun SetupScreen(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
-
-            // --- Save preset ---
-            AssistChip(
-                onClick = {
-                    if (selectedPreset == null) showNewPresetDialog = true
-                    else showSavePresetDialog = true
-                },
-                label = { Text(if (selectedPreset == null) stringResource(R.string.preset_save_chip) else "Save preset") },
-                leadingIcon = { Icon(Icons.Default.Save, null, modifier = Modifier.size(18.dp)) },
-            )
-
-            Spacer(Modifier.weight(1f))
             Spacer(Modifier.height(16.dp))
 
             // --- Start button ---
@@ -721,56 +574,6 @@ fun SetupScreen(
             },
         )
     }
-
-    if (showThemePicker) {
-        ThemePickerDialog(
-            currentMode = themeMode,
-            onSelect = { viewModel.setThemeMode(it); showThemePicker = false },
-            onDismiss = { showThemePicker = false },
-        )
-    }
-}
-
-@Composable
-private fun ThemePickerDialog(
-    currentMode: String,
-    onSelect: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.theme_title)) },
-        text = {
-            Column(modifier = Modifier.selectableGroup()) {
-                listOf(
-                    "system" to stringResource(R.string.theme_system),
-                    "light" to stringResource(R.string.theme_light),
-                    "dark" to stringResource(R.string.theme_dark),
-                ).forEach { (value, label) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectable(
-                                selected = currentMode == value,
-                                role = Role.RadioButton,
-                                onClick = { onSelect(value) },
-                            )
-                            .heightIn(min = 48.dp)
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(selected = currentMode == value, onClick = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(label)
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
-        },
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

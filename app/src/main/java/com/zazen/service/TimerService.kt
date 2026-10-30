@@ -59,9 +59,13 @@ class TimerService : Service() {
     /** Guards against the session being ended twice while teardown is in flight. */
     private var finishing = false
 
+    /** True from startTimer() until the session is torn down. */
+    private var sitActive = false
+
     /** Whole second last shown in the notification; used to throttle re-posts. */
     private var lastNotifiedSecond = -1L
     private var lastNotifiedOvertime = false
+    private var lastNotifiedPaused = false
 
     private val tickRunnable = object : Runnable {
         override fun run() {
@@ -97,6 +101,18 @@ class TimerService : Service() {
             _vibrateOnly.value = !_vibrateOnly.value
         }
 
+        /**
+         * Publish the sit as running before the start intent is delivered, so the
+         * timer screen never observes Idle (and bounces back to setup) while the
+         * service is still spinning up.
+         */
+        fun markStarting(config: TimerConfig) {
+            currentConfig = config
+            _vibrateOnly.value = config.vibrateOnly
+            val total = if (config.isOpenEnded) 0L else config.durationMillis
+            _timerState.value = TimerState.Running(total, total, elapsedMillis = 0)
+        }
+
         fun resetState() {
             _timerState.value = TimerState.Idle
             _vibrateOnly.value = false
@@ -121,6 +137,14 @@ class TimerService : Service() {
             ACTION_PAUSE -> pauseTimer()
             ACTION_RESUME -> resumeTimer()
             ACTION_STOP -> stopTimer()
+            // Sticky restart after the process was killed mid-sit: the sit's
+            // in-memory state is gone, so undo its side effects and shut down
+            // rather than idling in the background with DND still on.
+            null -> {
+                restoreDnd()
+                stopSelf()
+                return START_NOT_STICKY
+            }
         }
         return START_STICKY
     }
@@ -135,6 +159,8 @@ class TimerService : Service() {
     // --- Timer logic ---
 
     private fun startTimer(config: TimerConfig) {
+        if (sitActive) return
+        sitActive = true
         currentConfig = config
         _vibrateOnly.value = config.vibrateOnly
         totalDurationMillis = config.durationMillis
@@ -147,6 +173,7 @@ class TimerService : Service() {
         accumulatedPauseMillis = 0
         lastNotifiedSecond = -1
         lastNotifiedOvertime = false
+        lastNotifiedPaused = false
         finishing = false
         plannedBellPlayed = false
         startedAtRealtime = SystemClock.elapsedRealtime()
@@ -182,6 +209,7 @@ class TimerService : Service() {
         updateNotification(
             if (openEnded) elapsed else if (plannedBellPlayed) elapsed - totalDurationMillis else remaining,
             overtime = plannedBellPlayed,
+            paused = true,
         )
     }
 
@@ -217,8 +245,10 @@ class TimerService : Service() {
         else ringPlannedBellIfDue(elapsed)
 
         serviceScope.launch {
+            // A failed write must still reach Finished, or the screen freezes on
+            // a stopped timer whose Stop button is now a no-op. 0 = no session id.
             val sessionId = withContext(NonCancellable) {
-                saveSession(elapsed, completed = completed)
+                runCatching { saveSession(elapsed, completed = completed) }.getOrDefault(0L)
             }
             _timerState.value = TimerState.Finished(
                 sessionId = sessionId,
@@ -227,6 +257,7 @@ class TimerService : Service() {
                 openEnded = wasOpenEnded,
             )
             currentConfig = null
+            sitActive = false
             restoreDnd()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -342,21 +373,36 @@ class TimerService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun buildNotification(displayMillis: Long, overtime: Boolean = false): Notification {
+    private fun buildNotification(
+        displayMillis: Long,
+        overtime: Boolean = false,
+        paused: Boolean = false,
+    ): Notification {
         val contentIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        val pauseAction = NotificationCompat.Action.Builder(
-            null, getString(R.string.timer_cd_pause),
-            PendingIntent.getService(
-                this, 1,
-                Intent(this, TimerService::class.java).apply { action = ACTION_PAUSE },
-                PendingIntent.FLAG_IMMUTABLE,
-            )
-        ).build()
+        val pauseAction = if (paused) {
+            NotificationCompat.Action.Builder(
+                null, getString(R.string.timer_cd_resume),
+                PendingIntent.getService(
+                    this, 3,
+                    Intent(this, TimerService::class.java).apply { action = ACTION_RESUME },
+                    PendingIntent.FLAG_IMMUTABLE,
+                )
+            ).build()
+        } else {
+            NotificationCompat.Action.Builder(
+                null, getString(R.string.timer_cd_pause),
+                PendingIntent.getService(
+                    this, 1,
+                    Intent(this, TimerService::class.java).apply { action = ACTION_PAUSE },
+                    PendingIntent.FLAG_IMMUTABLE,
+                )
+            ).build()
+        }
 
         val stopAction = NotificationCompat.Action.Builder(
             null, getString(R.string.timer_cd_stop),
@@ -385,13 +431,16 @@ class TimerService : Service() {
      * seconds. Re-posting on every tick just floods the notification manager (and
      * the accessibility event stream), so collapse it to at most 1 Hz.
      */
-    private fun updateNotification(displayMillis: Long, overtime: Boolean = false) {
+    private fun updateNotification(displayMillis: Long, overtime: Boolean = false, paused: Boolean = false) {
         val second = displayMillis / 1000
-        if (second == lastNotifiedSecond && overtime == lastNotifiedOvertime) return
+        if (second == lastNotifiedSecond && overtime == lastNotifiedOvertime &&
+            paused == lastNotifiedPaused
+        ) return
         lastNotifiedSecond = second
         lastNotifiedOvertime = overtime
+        lastNotifiedPaused = paused
         getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID, buildNotification(displayMillis, overtime))
+            .notify(NOTIFICATION_ID, buildNotification(displayMillis, overtime, paused))
     }
 
     private fun formatTime(millis: Long): String {

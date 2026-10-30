@@ -22,6 +22,11 @@ class TimerManager @Inject constructor(
     val vibrateOnly: StateFlow<Boolean> get() = TimerService.vibrateOnly
 
     fun start(config: TimerConfig) {
+        // A second tap on Start (e.g. while the setup screen fades out) must not
+        // restart the sit that's already under way.
+        val current = state.value
+        if (current is TimerState.Running || current is TimerState.Paused) return
+        TimerService.markStarting(config)
         val intent = Intent(context, TimerService::class.java).apply {
             action = TimerService.ACTION_START
             putExtra(TimerService.EXTRA_CONFIG, config)

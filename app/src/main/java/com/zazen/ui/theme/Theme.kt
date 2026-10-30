@@ -55,12 +55,38 @@ private val LightColorScheme = lightColorScheme(
     outline = LightOnSurfaceVariant,
 )
 
+private val ZenColorScheme = darkColorScheme(
+    primary = ZenTan,
+    onPrimary = ZenEspresso,
+    primaryContainer = ZenUmber,
+    onPrimaryContainer = ZenParchment,
+    secondary = ZenSand,
+    onSecondary = ZenEspresso,
+    secondaryContainer = ZenBark,
+    onSecondaryContainer = ZenLinen,
+    tertiary = ZenSand,
+    onTertiary = ZenEspresso,
+    surface = ZenBlack,
+    surfaceVariant = ZenCharcoal,
+    background = ZenBlack,
+    onBackground = ZenOnSurface,
+    onSurface = ZenOnSurface,
+    onSurfaceVariant = ZenOnSurfaceVariant,
+    outline = ZenOnSurfaceVariant,
+)
+
+/** @param zen use the warm black/brown Zen palette (always dark). */
 @Composable
 fun ZazenTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    zen: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val colorScheme = when {
+        zen -> ZenColorScheme
+        darkTheme -> DarkColorScheme
+        else -> LightColorScheme
+    }
 
     val view = LocalView.current
     if (!view.isInEditMode) {

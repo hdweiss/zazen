@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -29,7 +30,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -250,24 +250,6 @@ private fun ActiveTimerContent(
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         val overtime = !openEnded && elapsed >= total
-        // Sound/vibrate toggle in top-right corner
-        IconButton(
-            onClick = onToggleVibrateOnly,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp),
-        ) {
-            Icon(
-                imageVector = if (vibrateOnly) Icons.AutoMirrored.Filled.VolumeOff
-                    else Icons.AutoMirrored.Filled.VolumeUp,
-                contentDescription = if (vibrateOnly) {
-                    stringResource(R.string.timer_cd_sound_off)
-                } else {
-                    stringResource(R.string.timer_cd_sound_on)
-                },
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
 
         Column(
             modifier = Modifier.align(Alignment.Center),
@@ -293,6 +275,20 @@ private fun ActiveTimerContent(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.clearAndSetSemantics { },
                 )
+                // Overlaid inside the ring, below the time, so pausing doesn't
+                // change the column's height and shift the whole layout.
+                if (isPaused) {
+                    Text(
+                        stringResource(R.string.timer_paused),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        // With the countdown silent this is the only cue that pausing
+                        // worked, and no bell rings for it.
+                        modifier = Modifier
+                            .offset(y = 64.dp)
+                            .semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
             }
 
             if (overtime) {
@@ -315,21 +311,24 @@ private fun ActiveTimerContent(
                 )
             }
 
-            if (isPaused) {
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    stringResource(R.string.timer_paused),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    // With the countdown silent this is the only cue that pausing
-                    // worked, and no bell rings for it.
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                )
-            }
-
             Spacer(Modifier.height(48.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                FilledTonalIconButton(
+                    onClick = onToggleVibrateOnly,
+                    modifier = Modifier.size(64.dp),
+                ) {
+                    Icon(
+                        imageVector = if (vibrateOnly) Icons.AutoMirrored.Filled.VolumeOff
+                            else Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = if (vibrateOnly) {
+                            stringResource(R.string.timer_cd_sound_off)
+                        } else {
+                            stringResource(R.string.timer_cd_sound_on)
+                        },
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
                 if (isPaused) {
                     FilledTonalIconButton(
                         onClick = onResume,

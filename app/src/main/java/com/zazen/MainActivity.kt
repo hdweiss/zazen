@@ -24,11 +24,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by prefs.themeModeFlow.collectAsState()
             val darkTheme = when (themeMode) {
-                "dark" -> true
+                "dark", "zen" -> true
                 "light" -> false
                 else -> isSystemInDarkTheme()
             }
-            ZazenTheme(darkTheme = darkTheme) {
+            ZazenTheme(darkTheme = darkTheme, zen = themeMode == "zen") {
                 ZazenNavGraph()
             }
         }

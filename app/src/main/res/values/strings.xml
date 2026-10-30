@@ -16,8 +16,11 @@
     <string name="action_saving">Saving\u2026</string>
 
     <!-- ===================== Setup screen ===================== -->
-    <string name="setup_cd_theme">Choose theme</string>
     <string name="setup_cd_stats">Meditation history</string>
+    <string name="setup_cd_settings">Settings</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_sound">Sound</string>
+    <string name="settings_section_during_sit">During a sit</string>
 
     <!-- Presets -->
     <string name="preset_cd_delete">Delete preset %1$s</string>
@@ -69,7 +72,6 @@
 
     <!-- Interval bells -->
     <string name="interval_bells_label">Interval Bells</string>
-    <string name="interval_bells_empty">No interval bells \u2014 tap Add to schedule bells within your session</string>
     <string name="interval_bell_at">at %1$s</string>
     <string name="interval_bell_cd_preview">Preview bell at %1$s</string>
     <string name="interval_bell_cd_edit">Edit bell at %1$s</string>
@@ -99,6 +101,7 @@
     <string name="theme_system">System default</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
+    <string name="theme_zen">Zen</string>
 
     <!-- ===================== Timer screen ===================== -->
     <string name="timer_cd_sound_on">Sound on. Tap to switch to vibrate only.</string>
