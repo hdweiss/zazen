@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -37,43 +36,40 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -85,7 +81,6 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -100,8 +95,7 @@ private const val OPEN_ENDED_BELL_MAX_MINUTES = 240
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SetupScreen(
-    onStartTimer: () -> Unit,
+fun IdleContent(
     onNavigateToStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
     viewModel: SetupViewModel = hiltViewModel(),
@@ -158,169 +152,196 @@ fun SetupScreen(
             }
         }
         viewModel.startTimer()
-        onStartTimer()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.app_name)) },
-                actions = {
-                    IconButton(onClick = onNavigateToStats) {
-                        Icon(Icons.Default.History, stringResource(R.string.setup_cd_stats))
-                    }
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, stringResource(R.string.setup_cd_settings))
-                    }
-                },
-            )
-        },
-    ) { padding ->
+    var showBellSheet by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .align(Alignment.TopCenter)
+                .fillMaxWidth(),
         ) {
-            // Only scrolls when it has to (many interval bells, large font
-            // scales); Start stays pinned below it either way.
-            Column(
+            // Menu lives only on the idle screen: a running sit is fullscreen and bare.
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .align(Alignment.End)
+                    .padding(8.dp),
             ) {
-                // --- Presets (plus the chip that saves the current setup as one) ---
-                Spacer(Modifier.height(8.dp))
+                IconButton(onClick = onNavigateToStats) {
+                    Icon(Icons.Default.History, stringResource(R.string.setup_cd_stats))
+                }
+                IconButton(onClick = onNavigateToSettings) {
+                    Icon(Icons.Default.Settings, stringResource(R.string.setup_cd_settings))
+                }
+            }
+            if (presets.isNotEmpty()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 ) {
                     presets.forEach { preset ->
-                        val deleteLabel = stringResource(R.string.preset_cd_delete, preset.name)
-                        FilterChip(
-                            selected = selectedPreset?.id == preset.id,
-                            onClick = { viewModel.loadPreset(preset) },
-                            // Deleting via the tiny trailing icon is impractical with a
-                            // screen reader, so expose it as a custom action on the chip.
-                            modifier = Modifier.semantics {
-                                customActions = listOf(
-                                    CustomAccessibilityAction(deleteLabel) {
-                                        presetToDelete = preset
-                                        true
-                                    },
-                                )
-                            },
-                            label = {
-                                Text(
-                                    preset.name,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            },
-                            trailingIcon = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clearAndSetSemantics { }
-                                        .clickable { presetToDelete = preset },
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        Icons.Default.Close,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
+                            val deleteLabel = stringResource(R.string.preset_cd_delete, preset.name)
+                            FilterChip(
+                                selected = selectedPreset?.id == preset.id,
+                                onClick = { viewModel.loadPreset(preset) },
+                                // Deleting via the tiny trailing icon is impractical with a
+                                // screen reader, so expose it as a custom action on the chip.
+                                modifier = Modifier.semantics {
+                                    customActions = listOf(
+                                        CustomAccessibilityAction(deleteLabel) {
+                                            presetToDelete = preset
+                                            true
+                                        },
                                     )
-                                }
-                            },
-                        )
-                    }
-                AssistChip(
-                    onClick = {
-                        if (selectedPreset == null) showNewPresetDialog = true
-                        else showSavePresetDialog = true
-                    },
-                    label = { Text(if (selectedPreset == null) stringResource(R.string.preset_save_chip) else "Save preset") },
-                    leadingIcon = { Icon(Icons.Default.Save, null, modifier = Modifier.size(18.dp)) },
-                )
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                // --- Timed / Open mode ---
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    SegmentedButton(
-                        selected = !openEnded,
-                        onClick = { viewModel.setOpenEnded(false) },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                    ) { Text(stringResource(R.string.mode_timed)) }
-                    SegmentedButton(
-                        selected = openEnded,
-                        onClick = { viewModel.setOpenEnded(true) },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                    ) { Text(stringResource(R.string.mode_open)) }
-                }
-
-                // --- Duration ---
-                Spacer(Modifier.height(40.dp))
-                if (openEnded) {
-                    val unlimitedLabel = stringResource(R.string.duration_cd_unlimited)
-                    Text(
-                        text = stringResource(R.string.duration_unlimited_symbol),
-                        style = MaterialTheme.typography.displayMedium,
-                        // "∞" is read inconsistently (or skipped) by TTS engines.
-                        modifier = Modifier.clearAndSetSemantics {
-                            contentDescription = unlimitedLabel
-                        },
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        stringResource(R.string.duration_open_ended_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                } else {
-                    val spoken = spokenDuration(durationSeconds)
-                    val editLabel = stringResource(R.string.duration_action_edit)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        IconButton(onClick = { viewModel.decrementDuration() }) {
-                            Icon(
-                                Icons.Default.Remove,
-                                stringResource(R.string.duration_cd_decrease),
+                                },
+                                label = {
+                                    Text(
+                                        preset.name,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                },
+                                trailingIcon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clearAndSetSemantics { }
+                                            .clickable { presetToDelete = preset },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    }
+                                },
                             )
                         }
+                }
+            }
+        }
+
+        // Same size and position as the running timer's ring, so pressing Start
+        // reads as the dial coming to life rather than a screen change.
+        Column(
+            modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                val spoken = if (openEnded) {
+                    stringResource(R.string.duration_cd_unlimited)
+                } else {
+                    spokenDuration(durationSeconds)
+                }
+                DurationDial(
+                    minutes = if (openEnded) 0f else durationSeconds / 60f,
+                    onMinutesChange = { minutes ->
+                        if (minutes == 0) {
+                            viewModel.setOpenEnded(true)
+                        } else {
+                            viewModel.setOpenEnded(false)
+                            viewModel.setDurationSeconds(minutes * 60)
+                        }
+                    },
+                    contentDescription = stringResource(R.string.duration_label),
+                    stateDescription = spoken,
+                    modifier = Modifier.size(280.dp),
+                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (openEnded) {
+                        Text(
+                            text = stringResource(R.string.duration_unlimited_symbol),
+                            style = MaterialTheme.typography.displayLarge,
+                            // The dial already announces "No time limit".
+                            modifier = Modifier.clearAndSetSemantics { },
+                        )
+                        Text(
+                            stringResource(R.string.mode_open),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.clearAndSetSemantics { },
+                        )
+                    } else {
+                        val editLabel = stringResource(R.string.duration_action_edit)
                         Text(
                             text = formatDuration(durationSeconds),
-                            style = MaterialTheme.typography.displayLarge,
+                            style = MaterialTheme.typography.displayMedium,
                             modifier = Modifier
                                 .clickable(
                                     onClickLabel = editLabel,
                                     role = Role.Button,
                                 ) { showDurationEditor = true }
-                                .padding(horizontal = 16.dp)
+                                .padding(8.dp)
                                 .semantics { contentDescription = spoken },
                         )
-                        IconButton(onClick = { viewModel.incrementDuration() }) {
-                            Icon(
-                                Icons.Default.Add,
-                                stringResource(R.string.duration_cd_increase),
-                            )
-                        }
                     }
                 }
+            }
 
-                Spacer(Modifier.height(40.dp))
+            Spacer(Modifier.height(48.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FilledTonalIconButton(
+                    onClick = { showBellSheet = true },
+                    modifier = Modifier.size(64.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Notifications,
+                        stringResource(R.string.setup_cd_bells),
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
+                // Start sits where Pause will be, and the row always holds three
+                // buttons, so starting a sit swaps icons without moving anything.
+                FilledIconButton(
+                    onClick = { attemptStart() },
+                    modifier = Modifier.size(64.dp),
+                ) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        stringResource(R.string.action_start),
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
+                FilledTonalIconButton(
+                    onClick = {
+                        if (selectedPreset == null) showNewPresetDialog = true
+                        else showSavePresetDialog = true
+                    },
+                    modifier = Modifier.size(64.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Save,
+                        stringResource(R.string.preset_save_chip),
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
+            }
+        }
+    }
+
+    if (showBellSheet) {
+        ModalBottomSheet(onDismissRequest = { showBellSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 24.dp),
+            ) {
+                Text(
+                    stringResource(R.string.bells_title),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Spacer(Modifier.height(16.dp))
 
                 // --- End bell sound ---
                 EndBellSelector(
@@ -404,6 +425,7 @@ fun SetupScreen(
                 bells.forEachIndexed { index, bell ->
                     BellItem(
                         bell = bell,
+                        pastEnd = !openEnded && bell.triggerAtMillis >= durationSeconds * 1_000L,
                         onEdit = { editingBellIndex = index; showAddBellDialog = true },
                         onRemove = { viewModel.removeBell(index) },
                         onPreview = {
@@ -412,26 +434,6 @@ fun SetupScreen(
                     )
                 }
             }
-
-            Spacer(Modifier.height(16.dp))
-
-            // --- Start button ---
-            Button(
-                onClick = { attemptStart() },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 56.dp),
-                shape = RoundedCornerShape(16.dp),
-            ) {
-                Icon(Icons.Default.PlayArrow, null)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    stringResource(R.string.action_start),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            }
-
-            Spacer(Modifier.height(24.dp))
         }
     }
 
@@ -545,7 +547,6 @@ fun SetupScreen(
                 TextButton(onClick = {
                     showVolumeWarning = false
                     viewModel.startTimer()
-                    onStartTimer()
                 }) { Text(stringResource(R.string.action_start_anyway)) }
             },
             dismissButton = {
@@ -633,7 +634,13 @@ private fun EndBellSelector(
 }
 
 @Composable
-private fun BellItem(bell: IntervalBell, onEdit: () -> Unit, onRemove: () -> Unit, onPreview: () -> Unit) {
+private fun BellItem(
+    bell: IntervalBell,
+    pastEnd: Boolean,
+    onEdit: () -> Unit,
+    onRemove: () -> Unit,
+    onPreview: () -> Unit,
+) {
     val timeLabel = formatBellTime(bell.triggerAtMillis)
     val soundName = Sound.fromResId(bell.soundResId)
         ?.let { stringResource(it.displayNameRes) }
@@ -645,7 +652,11 @@ private fun BellItem(bell: IntervalBell, onEdit: () -> Unit, onRemove: () -> Uni
             .padding(vertical = 4.dp),
     ) {
         Row(
-            modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
+            modifier = Modifier
+                .padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp)
+                // Shortening the sit on the dial can leave bells beyond the end;
+                // they'd ring during extra time, so flag rather than drop them.
+                .alpha(if (pastEnd) 0.5f else 1f),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(Icons.Default.Notifications, null)
@@ -657,7 +668,7 @@ private fun BellItem(bell: IntervalBell, onEdit: () -> Unit, onRemove: () -> Uni
             ) {
                 Text(timeLabel)
                 Text(
-                    soundName,
+                    if (pastEnd) stringResource(R.string.interval_bell_past_end, soundName) else soundName,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

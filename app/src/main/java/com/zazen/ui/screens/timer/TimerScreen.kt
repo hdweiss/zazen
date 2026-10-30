@@ -35,14 +35,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -69,12 +69,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.zazen.R
 import com.zazen.data.model.TimerState
+import com.zazen.ui.screens.setup.IdleContent
 import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
 fun TimerScreen(
-    onTimerDone: () -> Unit,
+    onNavigateToStats: () -> Unit,
+    onNavigateToSettings: () -> Unit,
     viewModel: TimerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -218,16 +220,15 @@ fun TimerScreen(
                     openEnded = s.openEnded,
                     elapsedMillis = s.elapsedMillis,
                     onSaveAndDismiss = { sessionId, notes, onError ->
-                        viewModel.saveNotesAndDismiss(sessionId, notes, onTimerDone, onError)
+                        viewModel.saveNotesAndDismiss(sessionId, notes, onError)
                     },
-                    onDiscard = { sessionId ->
-                        viewModel.discardAndDismiss(sessionId, onTimerDone)
-                    },
+                    onDiscard = { sessionId -> viewModel.discardAndDismiss(sessionId) },
                 )
 
-                is TimerState.Idle -> {
-                    LaunchedEffect(Unit) { onTimerDone() }
-                }
+                is TimerState.Idle -> IdleContent(
+                    onNavigateToStats = onNavigateToStats,
+                    onNavigateToSettings = onNavigateToSettings,
+                )
             }
         }
     }
@@ -379,7 +380,6 @@ private fun FinishedContent(
     // Keep draft independent of sessionId to avoid resetting when ID arrives from DB
     var notes by rememberSaveable { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
-    val hasValidId = sessionId > 0
 
     val durationText = formatElapsed(elapsedMillis)
 
@@ -443,7 +443,7 @@ private fun FinishedContent(
                 saving = true
                 onSaveAndDismiss(sessionId, notes) { saving = false }
             },
-            enabled = !saving && hasValidId,
+            enabled = !saving,
         ) {
             Text(
                 when {
@@ -458,7 +458,7 @@ private fun FinishedContent(
 
         androidx.compose.material3.TextButton(
             onClick = { onDiscard(sessionId) },
-            enabled = !saving && hasValidId,
+            enabled = !saving,
         ) {
             Text(
                 stringResource(R.string.finished_discard),

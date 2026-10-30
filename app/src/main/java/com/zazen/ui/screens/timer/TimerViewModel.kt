@@ -30,7 +30,7 @@ class TimerViewModel @Inject constructor(
     fun dismiss() = timerManager.reset()
     fun toggleVibrateOnly() = timerManager.toggleVibrateOnly()
 
-    fun discardAndDismiss(sessionId: Long, onDone: () -> Unit) {
+    fun discardAndDismiss(sessionId: Long) {
         viewModelScope.launch {
             try {
                 if (sessionId > 0) {
@@ -38,11 +38,10 @@ class TimerViewModel @Inject constructor(
                 }
             } catch (_: Exception) { /* best-effort delete */ }
             dismiss()
-            onDone()
         }
     }
 
-    fun saveNotesAndDismiss(sessionId: Long, notes: String, onDone: () -> Unit, onError: () -> Unit) {
+    fun saveNotesAndDismiss(sessionId: Long, notes: String, onError: () -> Unit) {
         viewModelScope.launch {
             try {
                 val trimmed = notes.trim()
@@ -50,7 +49,6 @@ class TimerViewModel @Inject constructor(
                     sessionRepository.updateNotes(sessionId, trimmed)
                 }
                 dismiss()
-                onDone()
             } catch (_: Exception) {
                 onError()
             }
